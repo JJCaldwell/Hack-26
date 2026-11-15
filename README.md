@@ -1,16 +1,13 @@
-# Medical Mission — Godot starter
+# Medical Platformer Update
 
-## Open the project
-
-1. Extract this ZIP to a folder.
-2. Open Godot and choose **Import**.
-3. Select the `project.godot` file in this folder.
-4. Press **F6** to run the current main scene, or **F5** to run the project.
+Open `project.godot` in Godot and run the project.
 
 ## Controls
+- A / D or Left / Right arrows: move
+- Space, W, or Up arrow: jump
+- E near the hospital-room door: enter the boss room
+- Left mouse button: swing the scalpel during the boss fight
+- After defeating the boss, press E at the new door to enter Level 2
 
-- **A / D** or **Left / Right arrows**: move
-- **Space** or **Up arrow**: jump
-- Walk into the glowing quiz stations, choose an answer, then reach the exit.
-
-The room, character, platforms, question prompts, and interface are created by the included Godot scripts, so no external art assets are needed to try the demo.
+## Boss fight
+The bloodstream room shows the apple pathogen. Player health is 100, boss health is 200, scalpel hits deal 20 damage, and apple jump hits deal 5 damage. Both health bars are shown. Defeating the boss opens the door to the Level 2 research wing. The apple sprite is cleaned so the stem/leaf and brown artwork are removed.
