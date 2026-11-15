@@ -1,0 +1,338 @@
+extends Node2D
+
+const PLAYER_SCRIPT = preload("res://player.gd")
+const QUESTIONS: Array[Dictionary] = [
+	{
+		"prompt": "What does the medical prefix cardio- refer to?",
+		"answers": ["The heart", "The skin", "The bones"],
+		"correct": 0,
+		"explain": "Correct! Cardio- refers to the heart."
+	},
+	{
+		"prompt": "What does dyspnea mean?",
+		"answers": ["Joint pain", "Difficulty breathing", "A fast heartbeat"],
+		"correct": 1,
+		"explain": "Correct! Dyspnea means difficult or labored breathing."
+	}
+]
+
+var player: CharacterBody2D
+var ui_layer: CanvasLayer
+var hud_label: Label
+var popup: PanelContainer
+var prompt_label: Label
+var feedback_label: Label
+var answers_box: VBoxContainer
+var quiz_open := false
+var current_question := 0
+var questions_answered := 0
+
+
+func _ready() -> void:
+	_register_controls()
+	queue_redraw()
+	_create_room()
+	_create_hud()
+	_create_question_popup()
+	_create_checkpoint(340.0, 0)
+	_create_checkpoint(880.0, 1)
+	_create_exit(1450.0)
+
+
+func _draw() -> void:
+	# A colorful, medical-science-inspired room, drawn directly in the scene.
+	draw_rect(Rect2(-1200, -800, 4000, 2000), Color("101b35"))
+	draw_rect(Rect2(-1200, 0, 4000, 560), Color("142542"))
+	for x in range(-500, 2000, 90):
+		draw_line(Vector2(x, 0), Vector2(x + 260, 560), Color(0.22, 0.72, 0.83, 0.10), 2.0)
+	for y in range(90, 540, 90):
+		draw_line(Vector2(-500, y), Vector2(2000, y), Color(0.25, 0.53, 0.72, 0.12), 1.0)
+	for p in [Vector2(120, 140), Vector2(570, 210), Vector2(1120, 120), Vector2(1600, 250)]:
+		draw_circle(p, 34, Color(0.16, 0.78, 0.76, 0.12))
+		draw_arc(p, 46, 0, TAU, 48, Color(0.29, 0.88, 0.83, 0.25), 2.0)
+	# Floor trim and small lights
+	draw_rect(Rect2(-600, 548, 2600, 10), Color("37d6c1"))
+	for x in range(-500, 1900, 100):
+		draw_circle(Vector2(x, 580), 3, Color("a1fff0"))
+
+
+func _register_controls() -> void:
+	_add_key_action("move_left", KEY_A)
+	_add_key_action("move_left", KEY_LEFT)
+	_add_key_action("move_right", KEY_D)
+	_add_key_action("move_right", KEY_RIGHT)
+	_add_key_action("jump", KEY_SPACE)
+	_add_key_action("jump", KEY_UP)
+
+
+func _add_key_action(action: StringName, key: Key) -> void:
+	if not InputMap.has_action(action):
+		InputMap.add_action(action)
+	var event := InputEventKey.new()
+	event.physical_keycode = key
+	if not InputMap.action_has_event(action, event):
+		InputMap.action_add_event(action, event)
+
+
+func _create_room() -> void:
+	# Three floor sections leave small gaps for the player to jump across.
+	_create_platform(Vector2(-90, 570), Vector2(940, 48))
+	_create_platform(Vector2(760, 570), Vector2(520, 48))
+	_create_platform(Vector2(1540, 570), Vector2(750, 48))
+	# A couple of low platforms add a little vertical movement to the room.
+	_create_platform(Vector2(585, 480), Vector2(150, 24), Color("268f98"))
+	_create_platform(Vector2(1115, 480), Vector2(170, 24), Color("268f98"))
+	_create_player()
+	_add_world_label("NEUROLOGY LAB", Vector2(-380, 115), Color("89f4e5"), 25)
+	_add_world_label("LEARN • JUMP • DISCOVER", Vector2(-378, 150), Color("b6c9e3"), 15)
+
+
+func _create_platform(center: Vector2, size: Vector2, color := Color("263d61")) -> void:
+	var body := StaticBody2D.new()
+	body.position = center
+	add_child(body)
+	var collision := CollisionShape2D.new()
+	var shape := RectangleShape2D.new()
+	shape.size = size
+	collision.shape = shape
+	body.add_child(collision)
+	var visual := Polygon2D.new()
+	visual.polygon = PackedVector2Array([
+		Vector2(-size.x / 2, -size.y / 2), Vector2(size.x / 2, -size.y / 2),
+		Vector2(size.x / 2, size.y / 2), Vector2(-size.x / 2, size.y / 2)
+	])
+	visual.color = color
+	body.add_child(visual)
+	var top_glow := Polygon2D.new()
+	top_glow.polygon = PackedVector2Array([
+		Vector2(-size.x / 2, -size.y / 2), Vector2(size.x / 2, -size.y / 2),
+		Vector2(size.x / 2, -size.y / 2 + 5), Vector2(-size.x / 2, -size.y / 2 + 5)
+	])
+	top_glow.color = Color("48e1c6")
+	body.add_child(top_glow)
+
+
+func _create_player() -> void:
+	player = CharacterBody2D.new()
+	player.name = "Player"
+	player.position = Vector2(-350, 520)
+	player.set_script(PLAYER_SCRIPT)
+	add_child(player)
+	var collision := CollisionShape2D.new()
+	var shape := CapsuleShape2D.new()
+	shape.radius = 15.0
+	shape.height = 48.0
+	collision.shape = shape
+	player.add_child(collision)
+	# Simple doctor/scientist character with a plus badge.
+	_add_circle(player, Vector2(0, -27), 13, Color("ffd8ba"))
+	_add_poly(player, [Vector2(-14, -14), Vector2(14, -14), Vector2(17, 17), Vector2(-17, 17)], Color("f3f7ff"))
+	_add_poly(player, [Vector2(-17, 17), Vector2(17, 17), Vector2(13, 24), Vector2(-13, 24)], Color("58d8c1"))
+	_add_poly(player, [Vector2(-7, -8), Vector2(7, -8), Vector2(7, 8), Vector2(-7, 8)], Color("36c9b7"))
+	_add_poly(player, [Vector2(-2, -6), Vector2(2, -6), Vector2(2, 6), Vector2(-2, 6)], Color.WHITE)
+	_add_poly(player, [Vector2(-6, -2), Vector2(6, -2), Vector2(6, 2), Vector2(-6, 2)], Color.WHITE)
+	var camera := Camera2D.new()
+	camera.position_smoothing_enabled = true
+	camera.position_smoothing_speed = 5.0
+	player.add_child(camera)
+	camera.make_current()
+
+
+func _add_circle(parent: Node2D, at: Vector2, radius: float, color: Color) -> void:
+	var points := PackedVector2Array()
+	for i in range(24):
+		var angle := TAU * float(i) / 24.0
+		points.append(at + Vector2(cos(angle), sin(angle)) * radius)
+	_add_poly(parent, points, color)
+
+
+func _add_poly(parent: Node2D, points: Variant, color: Color) -> void:
+	var polygon := Polygon2D.new()
+	polygon.polygon = PackedVector2Array(points)
+	polygon.color = color
+	parent.add_child(polygon)
+
+
+func _add_world_label(text: String, at: Vector2, color: Color, font_size: int) -> void:
+	var label := Label.new()
+	label.text = text
+	label.position = at
+	label.add_theme_color_override("font_color", color)
+	label.add_theme_font_size_override("font_size", font_size)
+	add_child(label)
+
+
+func _create_checkpoint(x: float, question_index: int) -> void:
+	var area := Area2D.new()
+	area.position = Vector2(x, 492)
+	area.name = "QuestionCheckpoint%d" % (question_index + 1)
+	add_child(area)
+	var collision := CollisionShape2D.new()
+	var shape := RectangleShape2D.new()
+	shape.size = Vector2(70, 150)
+	collision.shape = shape
+	area.add_child(collision)
+	_add_poly(area, [Vector2(-25, -58), Vector2(25, -58), Vector2(25, 45), Vector2(-25, 45)], Color("316a91"))
+	_add_poly(area, [Vector2(-25, -58), Vector2(25, -58), Vector2(25, -51), Vector2(-25, -51)], Color("59f0d3"))
+	_add_poly(area, [Vector2(-5, -42), Vector2(5, -42), Vector2(5, -22), Vector2(-5, -22)], Color.WHITE)
+	_add_poly(area, [Vector2(-15, -36), Vector2(15, -36), Vector2(15, -28), Vector2(-15, -28)], Color.WHITE)
+	_add_world_label("QUIZ %d" % (question_index + 1), Vector2(x - 34, 416), Color("b8fff2"), 16)
+	area.body_entered.connect(_on_checkpoint_entered.bind(area, question_index))
+
+
+func _create_exit(x: float) -> void:
+	var area := Area2D.new()
+	area.position = Vector2(x, 490)
+	add_child(area)
+	var collision := CollisionShape2D.new()
+	var shape := RectangleShape2D.new()
+	shape.size = Vector2(80, 170)
+	collision.shape = shape
+	area.add_child(collision)
+	_add_poly(area, [Vector2(-32, -70), Vector2(32, -70), Vector2(32, 48), Vector2(-32, 48)], Color("1d8e81"))
+	_add_poly(area, [Vector2(-24, -60), Vector2(24, -60), Vector2(24, 40), Vector2(-24, 40)], Color("163b59"))
+	_add_world_label("EXIT", Vector2(x - 22, 395), Color("94ffe7"), 19)
+	area.body_entered.connect(_on_exit_entered)
+
+
+func _create_hud() -> void:
+	ui_layer = CanvasLayer.new()
+	ui_layer.name = "UI"
+	add_child(ui_layer)
+	var bar := PanelContainer.new()
+	bar.position = Vector2(22, 18)
+	bar.custom_minimum_size = Vector2(450, 72)
+	bar.add_theme_stylebox_override("panel", _panel_style(Color(0.04, 0.09, 0.17, 0.88), Color("35d8c2")))
+	ui_layer.add_child(bar)
+	hud_label = Label.new()
+	hud_label.text = "MEDICAL MISSION     A/D or arrows: move     SPACE: jump"
+	hud_label.add_theme_color_override("font_color", Color("e6f5ff"))
+	hud_label.add_theme_font_size_override("font_size", 17)
+	bar.add_child(hud_label)
+
+
+func _create_question_popup() -> void:
+	popup = PanelContainer.new()
+	popup.set_anchors_preset(Control.PRESET_CENTER)
+	popup.offset_left = -270
+	popup.offset_top = -175
+	popup.offset_right = 270
+	popup.offset_bottom = 175
+	popup.add_theme_stylebox_override("panel", _panel_style(Color("101d33"), Color("4ce2cb")))
+	ui_layer.add_child(popup)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 24)
+	margin.add_theme_constant_override("margin_right", 24)
+	margin.add_theme_constant_override("margin_top", 20)
+	margin.add_theme_constant_override("margin_bottom", 20)
+	popup.add_child(margin)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 12)
+	margin.add_child(column)
+	prompt_label = Label.new()
+	prompt_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	prompt_label.add_theme_color_override("font_color", Color("f4f8ff"))
+	prompt_label.add_theme_font_size_override("font_size", 23)
+	column.add_child(prompt_label)
+	feedback_label = Label.new()
+	feedback_label.add_theme_color_override("font_color", Color("91f3df"))
+	feedback_label.add_theme_font_size_override("font_size", 16)
+	column.add_child(feedback_label)
+	answers_box = VBoxContainer.new()
+	answers_box.add_theme_constant_override("separation", 8)
+	column.add_child(answers_box)
+	popup.hide()
+
+
+func _panel_style(fill: Color, border: Color) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = fill
+	style.border_color = border
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(14)
+	style.content_margin_left = 12
+	style.content_margin_right = 12
+	style.content_margin_top = 10
+	style.content_margin_bottom = 10
+	return style
+
+
+func _on_checkpoint_entered(body: Node2D, area: Area2D, question_index: int) -> void:
+	if body != player or quiz_open:
+		return
+	area.set_deferred("monitoring", false)
+	current_question = question_index
+	_show_question()
+
+
+func _show_question() -> void:
+	quiz_open = true
+	player.set_physics_process(false)
+	feedback_label.text = "Choose the best answer to continue."
+	prompt_label.text = QUESTIONS[current_question]["prompt"]
+	for child in answers_box.get_children():
+		child.queue_free()
+	for i in range(QUESTIONS[current_question]["answers"].size()):
+		var button := Button.new()
+		button.text = QUESTIONS[current_question]["answers"][i]
+		button.custom_minimum_size = Vector2(440, 42)
+		button.add_theme_font_size_override("font_size", 17)
+		button.pressed.connect(_answer_selected.bind(i))
+		answers_box.add_child(button)
+	popup.show()
+
+
+func _answer_selected(answer_index: int) -> void:
+	if answer_index != int(QUESTIONS[current_question]["correct"]):
+		feedback_label.text = "Not quite—try another answer."
+		return
+	questions_answered += 1
+	hud_label.text = "QUESTIONS ANSWERED: %d/2     Keep moving to the exit!" % questions_answered
+	if questions_answered < QUESTIONS.size():
+		current_question += 1
+		feedback_label.text = QUESTIONS[current_question - 1]["explain"] + " Next checkpoint ahead!"
+		prompt_label.text = "Ready for the next question?"
+		for child in answers_box.get_children():
+			child.queue_free()
+		var next_button := Button.new()
+		next_button.text = "Continue"
+		next_button.custom_minimum_size = Vector2(440, 42)
+		next_button.pressed.connect(_resume_after_quiz)
+		answers_box.add_child(next_button)
+	else:
+		feedback_label.text = QUESTIONS[current_question]["explain"] + " Reach the exit!"
+		prompt_label.text = "Checkpoint complete!"
+		for child in answers_box.get_children():
+			child.queue_free()
+		var continue_button := Button.new()
+		continue_button.text = "Continue to the exit"
+		continue_button.custom_minimum_size = Vector2(440, 42)
+		continue_button.pressed.connect(_resume_after_quiz)
+		answers_box.add_child(continue_button)
+
+
+func _resume_after_quiz() -> void:
+	popup.hide()
+	quiz_open = false
+	player.set_physics_process(true)
+
+
+func _on_exit_entered(body: Node2D) -> void:
+	if body != player:
+		return
+	player.set_physics_process(false)
+	quiz_open = true
+	prompt_label.text = "Patient discharged!"
+	feedback_label.text = "You reached the end and completed %d medical questions." % questions_answered
+	for child in answers_box.get_children():
+		child.queue_free()
+	var finish_button := Button.new()
+	finish_button.text = "Play again"
+	finish_button.custom_minimum_size = Vector2(440, 42)
+	finish_button.pressed.connect(_restart_game)
+	answers_box.add_child(finish_button)
+	popup.show()
+
+
+func _restart_game() -> void:
+	get_tree().reload_current_scene()

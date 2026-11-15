@@ -23,20 +23,7 @@ const PHD_TERM_STRINGS: Array[String] = [
 	"ERYTHROCYTE • LEUKOCYTE • PLATELET",
 	"PATHOLOGY • ANATOMY • PHYSIOLOGY"
 ]
-const QUESTIONS: Array[Dictionary] = [
-	{
-		"prompt": "What does the medical prefix cardio- refer to?",
-		"answers": ["The heart", "The skin", "The bones"],
-		"correct": 0,
-		"explain": "Correct! Cardio- refers to the heart."
-	},
-	{
-		"prompt": "What does dyspnea mean?",
-		"answers": ["Joint pain", "Difficulty breathing", "A fast heartbeat"],
-		"correct": 1,
-		"explain": "Correct! Dyspnea means difficult or labored breathing."
-	}
-]
+var questions: Array[Dictionary] = []
 
 var player: CharacterBody2D
 var ui_layer: CanvasLayer
@@ -93,12 +80,24 @@ var player_camera: Camera2D
 
 
 func _ready() -> void:
+	_load_questions()
 	_register_controls()
 	queue_redraw()
 	_create_room()
 	_create_hud()
 	_create_question_popup()
 
+
+func _load_questions() -> void:
+	var file := FileAccess.open("res://medical_questions.json", FileAccess.READ)
+	if file == null:
+		push_error("Question bank could not be opened.")
+		return
+	var parsed: Variant = JSON.parse_string(file.get_as_text())
+	if parsed is Array:
+		questions.assign(parsed)
+	if questions.is_empty():
+		push_error("Question bank is empty.")
 
 func _input(event: InputEvent) -> void:
 	if not quiz_open and event is InputEventMouseButton:
@@ -161,9 +160,10 @@ func _handle_fall() -> void:
 	player.velocity = Vector2.ZERO
 	player.launch_horizontal_time = 0.0
 	player.set_physics_process(false)
-	current_question = questions_answered % QUESTIONS.size()
+	current_question = randi_range(0, questions.size() - 1)
 	quiz_open = true
 	prompt_label.text = "You fell! You're back on the platform you were standing on."
+	feedback_label.add_theme_color_override("font_color", Color("91f3df"))
 	feedback_label.text = "Answer the medical question correctly to continue."
 	_show_answer_buttons()
 	popup.show()
@@ -1167,15 +1167,9 @@ func _damage_player(amount: int) -> void:
 	player_health = maxi(0, player_health - amount)
 	_update_health_ui()
 	if player_health == 0:
-		_hide_scalpel()
-		if boss_room and boss_kind == &"phd":
-			_respawn_before_phd()
-			return
-		if boss_room:
-			_restart_boss_fight()
-		else:
-			_restore_at_checkpoint()
-		hud_label.text = "YOU DIED     RESPAWNED AT LEVEL START"
+		player_health = PLAYER_MAX_HEALTH
+		_update_health_ui()
+		_handle_fall()
 
 
 func _restart_boss_fight() -> void:
@@ -1406,6 +1400,7 @@ func _create_question_popup() -> void:
 	prompt_label.add_theme_font_size_override("font_size", 23)
 	column.add_child(prompt_label)
 	feedback_label = Label.new()
+	feedback_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	feedback_label.add_theme_color_override("font_color", Color("91f3df"))
 	feedback_label.add_theme_font_size_override("font_size", 16)
 	column.add_child(feedback_label)
@@ -1429,12 +1424,20 @@ func _panel_style(fill: Color, border: Color) -> StyleBoxFlat:
 
 
 func _show_answer_buttons() -> void:
-	prompt_label.text += "\n\n" + QUESTIONS[current_question]["prompt"]
+	prompt_label.text += "\n\n[%s] %s" % [questions[current_question]["subject"], questions[current_question]["prompt"]]
 	for child in answers_box.get_children():
 		child.queue_free()
-	for i in range(QUESTIONS[current_question]["answers"].size()):
+	if questions[current_question].get("type", "mcq") == "free_response":
+		var reveal_button := Button.new()
+		reveal_button.text = "Reveal answer"
+		reveal_button.custom_minimum_size = Vector2(440, 42)
+		reveal_button.pressed.connect(_reveal_free_response)
+		answers_box.add_child(reveal_button)
+		popup.show()
+		return
+	for i in range(questions[current_question]["answers"].size()):
 		var button := Button.new()
-		button.text = QUESTIONS[current_question]["answers"][i]
+		button.text = questions[current_question]["answers"][i]
 		button.custom_minimum_size = Vector2(440, 42)
 		button.add_theme_font_size_override("font_size", 17)
 		button.pressed.connect(_answer_selected.bind(i))
@@ -1442,19 +1445,33 @@ func _show_answer_buttons() -> void:
 	popup.show()
 
 
+func _reveal_free_response() -> void:
+	feedback_label.text = "Answer: " + str(questions[current_question]["answer"])
+	_show_quiz_continue()
+
+
 func _answer_selected(answer_index: int) -> void:
-	if answer_index != int(QUESTIONS[current_question]["correct"]):
-		_damage_player(5)
-		if player_health > 0:
-			feedback_label.text = "Not quite. You lost 5 health. Try another answer."
-		return
-	questions_answered += 1
-	hud_label.text = "MEDICAL MISSION     QUESTIONS ANSWERED: %d" % questions_answered
-	feedback_label.text = QUESTIONS[current_question]["explain"]
+	var correct_index := int(questions[current_question]["correct"])
+	var correct_answer: String = questions[current_question]["answers"][correct_index]
+	if answer_index == correct_index:
+		questions_answered += 1
+		hud_label.text = "MEDICAL MISSION     QUESTIONS ANSWERED: %d" % questions_answered
+		feedback_label.add_theme_color_override("font_color", Color("91f3df"))
+		feedback_label.text = "Correct! " + str(questions[current_question]["explain"])
+	else:
+		_damage_player(3)
+		if player_health == PLAYER_MAX_HEALTH and quiz_open:
+			return
+		feedback_label.add_theme_color_override("font_color", Color("ff5d68"))
+		feedback_label.text = "You're incorrect. The correct answer is: " + correct_answer
+	_show_quiz_continue()
+
+
+func _show_quiz_continue() -> void:
 	for child in answers_box.get_children():
 		child.queue_free()
 	var continue_button := Button.new()
-	continue_button.text = "Continue platforming"
+	continue_button.text = "Continue"
 	continue_button.custom_minimum_size = Vector2(440, 42)
 	continue_button.pressed.connect(_resume_after_quiz)
 	answers_box.add_child(continue_button)
@@ -1463,4 +1480,9 @@ func _answer_selected(answer_index: int) -> void:
 func _resume_after_quiz() -> void:
 	popup.hide()
 	quiz_open = false
+	player.global_position = last_grounded_position
+	player.velocity = Vector2.ZERO
+	player.launch_horizontal_time = 0.0
 	player.set_physics_process(true)
+
+
