@@ -9,6 +9,7 @@ const MEDICAL_STUDENT_TEXTURE = preload("res://medical_student.png")
 const KAREN_TEXTURE = preload("res://karen.png")
 const ADRENALINE_TEXTURE = preload("res://adrenaline.png")
 const PHD_TEXTURE = preload("res://phd.png")
+const PHD_PROJECTILE_TEXTURE = preload("res://phd_projectile.png")
 const PLAYER_MAX_HEALTH := 100
 const BOSS_MAX_HEALTH := 200
 const SCALPEL_DAMAGE := 20
@@ -17,12 +18,6 @@ const SCALPEL_SWING_TIME := 0.42
 const BOSS_ARENA_MIN_X := -640.0
 const BOSS_ARENA_MAX_X := 640.0
 const PHD_DOOR_RESPAWN_POSITION := Vector2(1905, 289)
-const PHD_TERM_STRINGS: Array[String] = [
-	"CARDIOLOGY • HEMATOLOGY • NEUROLOGY",
-	"DYSPNEA • TACHYCARDIA • HEMOSTASIS",
-	"ERYTHROCYTE • LEUKOCYTE • PLATELET",
-	"PATHOLOGY • ANATOMY • PHYSIOLOGY"
-]
 var questions: Array[Dictionary] = []
 
 var player: CharacterBody2D
@@ -56,7 +51,6 @@ var moving_arm_hand: Polygon2D
 var player_move_clock := 0.0
 var virus_hazards: Array[Area2D] = []
 var virus_spawn_timer := 0.0
-var phd_term_index := 0
 var player_health := PLAYER_MAX_HEALTH
 var boss_health := BOSS_MAX_HEALTH
 var boss_jump_timer := 2.5
@@ -684,7 +678,6 @@ func _enter_boss_room(kind: StringName) -> void:
 	door_nearby = false
 	_clear_viruses()
 	virus_spawn_timer = 0.0
-	phd_term_index = 0
 	player_health = PLAYER_MAX_HEALTH
 	boss_health = BOSS_MAX_HEALTH
 	seed_projectiles.clear()
@@ -907,31 +900,20 @@ func _shoot_apple_seed() -> void:
 		handle.default_color = Color("e8bb62")
 		projectile.add_child(handle)
 	else:
-		var bubble := Polygon2D.new()
-		bubble.polygon = PackedVector2Array([
-			Vector2(-178, -20), Vector2(178, -20), Vector2(178, 20), Vector2(-178, 20)
-		])
-		bubble.color = Color("172a50")
-		projectile.add_child(bubble)
-		var terms := Label.new()
-		terms.position = Vector2(-174, -18)
-		terms.size = Vector2(348, 36)
-		terms.text = PHD_TERM_STRINGS[phd_term_index % PHD_TERM_STRINGS.size()]
-		phd_term_index += 1
-		terms.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		terms.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		terms.add_theme_color_override("font_color", Color("fff1a6"))
-		terms.add_theme_color_override("font_outline_color", Color("10192d"))
-		terms.add_theme_constant_override("outline_size", 3)
-		terms.add_theme_font_size_override("font_size", 16)
-		projectile.add_child(terms)
+		var sprite := Sprite2D.new()
+		sprite.texture = PHD_PROJECTILE_TEXTURE
+		sprite.scale = Vector2(0.14, 0.14)
+		sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		projectile.add_child(sprite)
 	var start_offset := Vector2(-8.0, -8.0)
 	if boss_kind == &"phd":
 		start_offset = Vector2(signf(player.global_position.x - boss.global_position.x) * 90.0, 0.0)
 	var start := boss.global_position + start_offset
 	var aim := (player.global_position - start).normalized()
 	projectile.global_position = start
-	if boss_kind != &"phd":
+	if boss_kind == &"phd":
+		projectile.rotation = aim.angle()
+	else:
 		projectile.rotation = aim.angle() + PI / 2.0
 	var projectile_speed := 540.0
 	if boss_kind == &"apple":
